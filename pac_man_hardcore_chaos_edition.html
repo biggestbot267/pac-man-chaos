@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pac-Man: Hardcore Chaos Edition</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js for 3D Simulation Engine -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rajdhani:wght@600;700&display=swap');
+
+    body {
+      background-color: #050508;
+      font-family: 'Rajdhani', sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow: hidden;
+    }
+
+    .font-arcade {
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    /* CRT Monitor Scanline effect */
+    .crt-overlay {
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.25) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.03),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.03)
+      );
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none;
+    }
+
+    .glow-yellow {
+      filter: drop-shadow(0 0 10px rgba(234, 179, 8, 0.8));
+    }
+    .glow-red {
+      filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.8));
+    }
+    .glow-green {
+      filter: drop-shadow(0 0 12px rgba(34, 197, 94, 0.8));
+    }
+
+    /* Smooth Hover & Micro-interactions for buttons */
+    .btn-hover {
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+      cursor: pointer;
+    }
+    .btn-hover:hover {
+      transform: scale(1.06);
+      filter: brightness(1.2);
+    }
+    .btn-hover:active {
+      transform: scale(0.95);
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #09090b; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between items-center text-white relative overflow-hidden">
+
+  <!-- CRT Screen Overlay -->
+  <div class="crt-overlay absolute inset-0 z-30"></div>
+
+  <!-- Header / Top Bar -->
+  <header class="w-full px-4 py-3 flex justify-between items-center z-20 bg-zinc-950/90 border-b border-zinc-800 backdrop-blur-md shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center text-zinc-950 font-bold font-arcade text-xs glow-yellow">
+        C
+      </div>
+      <div>
+        <h1 class="text-base sm:text-lg md:text-xl font-bold tracking-wider text-yellow-400 font-arcade uppercase">HARDCORE PAC</h1>
+        <p class="text-xs text-zinc-400 flex items-center gap-2">
+          <span>DIFFICULTY:</span> 
+          <span id="diff-badge" class="text-red-500 font-bold uppercase">NIGHTMARE</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Mode Toggle & HUD Indicators -->
+    <div class="flex items-center gap-3 sm:gap-6">
+      <button id="toggle-3d-btn" onclick="toggleViewMode()" class="btn-hover px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg border border-indigo-400 text-xs font-arcade font-bold shadow-md">
+        3D MODE: ON
+      </button>
+
+      <div class="text-right">
+        <div class="text-[10px] sm:text-xs text-zinc-400 font-arcade">SCORE</div>
+        <div id="score-display" class="text-lg sm:text-2xl font-bold font-arcade text-yellow-400">00000</div>
+      </div>
+      <div class="text-right">
+        <div class="text-[10px] sm:text-xs text-zinc-400 font-arcade">LIVES</div>
+        <div id="lives-display" class="flex gap-1 text-yellow-400 text-base sm:text-lg">
+          ♥♥♥
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Game Container -->
+  <main class="relative flex-1 w-full h-full flex items-center justify-center p-2 z-10 min-h-0 overflow-hidden">
+    <!-- Canvas Wrapper -->
+    <div id="canvas-container" class="relative w-full h-full max-w-2xl max-h-[85vh] rounded-xl border-2 border-zinc-800 shadow-2xl shadow-yellow-500/10 bg-black flex items-center justify-center overflow-hidden">
+      <!-- 2D Canvas -->
+      <canvas id="gameCanvas" class="block"></canvas>
+      <!-- 3D Canvas Container -->
+      <div id="threejs-container" class="absolute inset-0 w-full h-full hidden"></div>
+
+      <!-- Ability Cooldown HUD Overlay -->
+      <div id="ability-hud" class="absolute bottom-3 left-3 flex gap-2 z-20 pointer-events-none hidden">
+        <div class="bg-zinc-900/90 border border-zinc-700 px-3 py-1.5 rounded-lg flex items-center gap-2 backdrop-blur">
+          <span class="text-xs font-arcade text-cyan-400">DASH [SPC]</span>
+          <div class="w-16 bg-zinc-800 h-2 rounded-full overflow-hidden">
+            <div id="dash-bar" class="bg-cyan-400 h-full w-full transition-all duration-75"></div>
+          </div>
+        </div>
+        <div class="bg-zinc-900/90 border border-zinc-700 px-3 py-1.5 rounded-lg flex items-center gap-2 backdrop-blur">
+          <span class="text-xs font-arcade text-amber-400">PULSE [SHF]</span>
+          <div class="w-16 bg-zinc-800 h-2 rounded-full overflow-hidden">
+            <div id="pulse-bar" class="bg-amber-400 h-full w-full transition-all duration-75"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Secret Admin Side Panel Overlay -->
+      <div id="admin-panel" class="absolute top-0 right-0 bottom-0 w-72 bg-zinc-950/95 border-l-2 border-green-500 shadow-2xl z-50 p-4 transform translate-x-full transition-transform duration-300 backdrop-blur-md flex flex-col justify-between overflow-y-auto">
+        <div class="space-y-4">
+          <div class="flex justify-between items-center border-b border-zinc-800 pb-2">
+            <h3 class="font-arcade text-sm text-green-400 flex items-center gap-2 glow-green">
+              <span>⚡</span> ADMIN CONSOLE
+            </h3>
+            <button onclick="toggleAdminPanel(false)" class="text-zinc-400 hover:text-white font-bold text-sm px-2 py-1">✕</button>
+          </div>
+
+          <div class="space-y-3 font-mono text-xs">
+            <!-- God Mode Toggle -->
+            <div class="bg-zinc-900/80 p-2.5 rounded-lg border border-zinc-800 flex justify-between items-center">
+              <span class="text-zinc-300">God Mode</span>
+              <button id="godmode-btn" onclick="toggleGodMode()" class="btn-hover px-2.5 py-1 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded font-bold">OFF</button>
+            </div>
+
+            <!-- Add Score -->
+            <div class="bg-zinc-900/80 p-2.5 rounded-lg border border-zinc-800 space-y-2">
+              <span class="text-zinc-300 block">Score Modifier</span>
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="addAdminScore(1000)" class="btn-hover py-1 bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 rounded font-bold">+1000</button>
+                <button onclick="addAdminScore(99999)" class="btn-hover py-1 bg-yellow-500/30 text-yellow-300 border border-yellow-500/60 rounded font-bold">MAX</button>
+              </div>
+            </div>
+
+            <!-- Ghost Actions -->
+            <div class="bg-zinc-900/80 p-2.5 rounded-lg border border-zinc-800 space-y-2">
+              <span class="text-zinc-300 block">Ghost Controls</span>
+              <div class="grid grid-cols-2 gap-2">
+                <button id="freeze-btn" onclick="toggleFreezeGhosts()" class="btn-hover py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 rounded font-bold">FREEZE</button>
+                <button onclick="triggerSuperFrightened()" class="btn-hover py-1 bg-blue-500/20 text-blue-400 border border-blue-500/40 rounded font-bold">EAT ALL</button>
+              </div>
+            </div>
+
+            <!-- Speed Multiplier -->
+            <div class="bg-zinc-900/80 p-2.5 rounded-lg border border-zinc-800 space-y-2">
+              <span class="text-zinc-300 block">Pac Speed Boost</span>
+              <div class="grid grid-cols-3 gap-1">
+                <button onclick="setPacSpeedMultiplier(1)" class="btn-hover py-1 bg-zinc-800 text-zinc-300 border border-zinc-700 rounded font-bold">1x</button>
+                <button onclick="setPacSpeedMultiplier(2)" class="btn-hover py-1 bg-zinc-800 text-zinc-300 border border-zinc-700 rounded font-bold">2x</button>
+                <button onclick="setPacSpeedMultiplier(3)" class="btn-hover py-1 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded font-bold">3x</button>
+              </div>
+            </div>
+
+            <!-- Instant Win / Hazards Reset -->
+            <div class="bg-zinc-900/80 p-2.5 rounded-lg border border-zinc-800 space-y-2">
+              <span class="text-zinc-300 block">System Override</span>
+              <button onclick="clearAllDots()" class="btn-hover w-full py-1.5 bg-green-600 hover:bg-green-500 text-white rounded font-bold font-arcade text-[10px]">CLEAR MAZE</button>
+              <button onclick="clearHazards()" class="btn-hover w-full py-1.5 bg-red-600 hover:bg-red-500 text-white rounded font-bold font-arcade text-[10px]">CLEAR TRAPS</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-[10px] text-zinc-500 font-mono text-center pt-2 border-t border-zinc-900">
+          CHEAT SEQUENCE ACTIVE
+        </div>
+      </div>
+
+      <!-- Start / Game Over Modal -->
+      <div id="game-modal" class="absolute inset-0 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 z-40 overflow-y-auto">
+        <div class="w-full max-w-sm sm:max-w-md text-center space-y-4 my-auto">
+          <div class="space-y-1.5">
+            <h2 id="modal-title" class="text-2xl sm:text-3xl font-arcade text-yellow-400 tracking-wider glow-yellow">
+              CHAOS EDITION
+            </h2>
+            <p id="modal-subtitle" class="text-zinc-400 text-xs sm:text-sm">
+              Standard Pac-Man is dead. Dark mazes, laser traps, toxic slime, and aggressive AI await.
+            </p>
+          </div>
+
+          <!-- Difficulty Selector -->
+          <div class="bg-zinc-900/90 p-3 rounded-xl border border-zinc-800 space-y-2">
+            <label class="block text-[11px] font-arcade text-zinc-400">SELECT CHALLENGE</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button onclick="setDifficulty('hard')" id="btn-diff-hard" class="diff-btn btn-hover py-2 text-xs font-bold rounded-lg border border-yellow-500/50 text-yellow-400 bg-yellow-500/10">HARD</button>
+              <button onclick="setDifficulty('insane')" id="btn-diff-insane" class="diff-btn btn-hover py-2 text-xs font-bold rounded-lg border border-zinc-700 text-zinc-400">INSANE</button>
+              <button onclick="setDifficulty('nightmare')" id="btn-diff-nightmare" class="diff-btn btn-hover py-2 text-xs font-bold rounded-lg border border-zinc-700 text-zinc-400">NIGHTMARE</button>
+            </div>
+          </div>
+
+          <!-- Modifiers Summary -->
+          <div id="modifier-list" class="text-left text-xs text-zinc-300 bg-zinc-950 p-3 rounded-lg border border-zinc-800 space-y-1 font-mono">
+            <div class="text-yellow-400 font-bold font-arcade text-[11px] mb-1">HAZARDS ACTIVE:</div>
+            <div>⚡ Fog of War Vision Cone</div>
+            <div>👾 Smart Predictor AI Ghosts</div>
+            <div>☣️ Toxic Ghost Trails & Lasers</div>
+            <div>🔑 Secret Sequence: UP UP DOWN DOWN DOWN DOWN DOWN</div>
+          </div>
+
+          <button id="start-btn" onclick="startGame()" class="btn-hover w-full py-3.5 bg-yellow-400 text-zinc-950 font-arcade font-bold rounded-xl shadow-lg shadow-yellow-500/20 text-base sm:text-lg">
+            START SURVIVAL
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Touch Controls Overlay for Mobile -->
+  <footer class="w-full px-4 py-2 flex justify-between items-center z-20 md:hidden bg-zinc-950/90 border-t border-zinc-800 shrink-0">
+    <!-- Virtual D-Pad -->
+    <div class="grid grid-cols-3 gap-1 w-28 h-28 my-1">
+      <div></div>
+      <button onclick="handleTouchDir('UP')" class="btn-hover bg-zinc-800 border border-zinc-700 rounded-lg text-white font-bold flex items-center justify-center">▲</button>
+      <div></div>
+      <button onclick="handleTouchDir('LEFT')" class="btn-hover bg-zinc-800 border border-zinc-700 rounded-lg text-white font-bold flex items-center justify-center">◀</button>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-lg flex items-center justify-center text-[9px] text-zinc-500 font-arcade">PAD</div>
+      <button onclick="handleTouchDir('RIGHT')" class="btn-hover bg-zinc-800 border border-zinc-700 rounded-lg text-white font-bold flex items-center justify-center">▶</button>
+      <div></div>
+      <button onclick="handleTouchDir('DOWN')" class="btn-hover bg-zinc-800 border border-zinc-700 rounded-lg text-white font-bold flex items-center justify-center">▼</button>
+      <div></div>
+    </div>
+
+    <!-- Mobile Ability Action Buttons -->
+    <div class="flex flex-col gap-2">
+      <button onclick="triggerDash()" class="btn-hover px-4 py-2.5 bg-cyan-600 text-white rounded-xl font-arcade text-xs font-bold border border-cyan-400 shadow-md">
+        DASH
+      </button>
+      <button onclick="triggerPulse()" class="btn-hover px-4 py-2.5 bg-amber-600 text-white rounded-xl font-arcade text-xs font-bold border border-amber-400 shadow-md">
+        PULSE
+      </button>
+    </div>
+  </footer>
+
+  <!-- Controls Hints Desktop -->
+  <div class="hidden md:flex gap-6 py-2 text-xs text-zinc-500 font-arcade z-20 shrink-0">
+    <span>[ARROWS/WASD] MOVE</span>
+    <span>[SPACE] DASH BURST</span>
+    <span>[SHIFT] REVEAL PULSE</span>
+    <span>[CHEAT] ↑↑↓↓↓↓↓ FOR ADMIN</span>
+  </div>
+
+  <script>
+    /* ==========================================================================
+       GLOBAL GAME CONFIGURATION
+       ========================================================================== */
+    const GAME_CONFIG = {
+      pacMan: {
+        baseSpeed: 0.035,
+        maxSpeed: 0.085,
+        acceleration: 0.0018,
+        turnSpeedBoost: 0.125,
+        dashMultiplier: 5,
+      },
+      difficulties: {
+        hard: {
+          ghostSpeed: 0.030,
+          fogRadius: 300,
+          laserInterval: 7000,
+          slimeDuration: 4000,
+          powerDuration: 5000
+        },
+        insane: {
+          ghostSpeed: 0.09,
+          fogRadius: 130,
+          laserInterval: 5000,
+          slimeDuration: 7000,
+          powerDuration: 3500
+        },
+        nightmare: {
+          ghostSpeed: 0.105,
+          fogRadius: 95,
+          laserInterval: 3500,
+          slimeDuration: 10000,
+          powerDuration: 2500
+        }
+      }
+    };
+
+    /* ==========================================================================
+       ADMIN & CHEAT CODE STATE
+       ========================================================================== */
+    let adminGodMode = false;
+    let adminGhostsFrozen = false;
+    let adminPacSpeedMult = 1.0;
+    
+    // Key sequence detector for cheat: UP UP DOWN DOWN DOWN DOWN DOWN
+    const CHEAT_SEQUENCE = ['UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'DOWN', 'DOWN'];
+    let currentInputSequence = [];
+
+    function checkCheatSequence(inputDir) {
+      currentInputSequence.push(inputDir);
+      if (currentInputSequence.length > CHEAT_SEQUENCE.length) {
+        currentInputSequence.shift();
+      }
+
+      if (JSON.stringify(currentInputSequence) === JSON.stringify(CHEAT_SEQUENCE)) {
+        toggleAdminPanel(true);
+        sfx.playPower();
+        currentInputSequence = [];
+      }
+    }
+
+    function toggleAdminPanel(show) {
+      const panel = document.getElementById('admin-panel');
+      if (show) {
+        panel.classList.remove('translate-x-full');
+      } else {
+        panel.classList.add('translate-x-full');
+      }
+    }
+
+    function toggleGodMode() {
+      adminGodMode = !adminGodMode;
+      const btn = document.getElementById('godmode-btn');
+      if (adminGodMode) {
+        btn.innerText = 'ON';
+        btn.className = 'btn-hover px-2.5 py-1 bg-green-500/20 text-green-400 border border-green-500/60 rounded font-bold';
+      } else {
+        btn.innerText = 'OFF';
+        btn.className = 'btn-hover px-2.5 py-1 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded font-bold';
+      }
+    }
+
+    function addAdminScore(amount) {
+      score += amount;
+      updateScoreDisplay();
+      sfx.playWaka();
+    }
+
+    function toggleFreezeGhosts() {
+      adminGhostsFrozen = !adminGhostsFrozen;
+      const btn = document.getElementById('freeze-btn');
+      if (adminGhostsFrozen) {
+        btn.className = 'btn-hover py-1 bg-cyan-500/60 text-white border border-cyan-400 rounded font-bold';
+      } else {
+        btn.className = 'btn-hover py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 rounded font-bold';
+      }
+    }
+
+    function triggerSuperFrightened() {
+      powerPelletTimer = 15000;
+      sfx.playPower();
+    }
+
+    function setPacSpeedMultiplier(mult) {
+      adminPacSpeedMult = mult;
+      sfx.playDash();
+    }
+
+    function clearAllDots() {
+      for (let r = 0; r < GRID_HEIGHT; r++) {
+        for (let c = 0; c < GRID_WIDTH; c++) {
+          if (map[r][c] === 2 || map[r][c] === 3) map[r][c] = 0;
+        }
+      }
+      checkWinCondition();
+    }
+
+    function clearHazards() {
+      laserTraps = [];
+      slimeTrails = [];
+    }
+
+    /* ==========================================================================
+       AUDIO SYNTHESIZER
+       ========================================================================== */
+    class SoundFX {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+      }
+
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      }
+
+      playWaka() {
+        if (!this.enabled) return;
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(320, this.ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.08);
+      }
+
+      playPower() {
+        if (!this.enabled) return;
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(800, this.ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.25);
+      }
+
+      playDash() {
+        if (!this.enabled) return;
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+      }
+
+      playPulse() {
+        if (!this.enabled) return;
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(900, this.ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.3);
+      }
+
+      playDeath() {
+        if (!this.enabled) return;
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(500, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(50, this.ctx.currentTime + 0.6);
+        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.6);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.6);
+      }
+
+      playEatGhost() {
+        if (!this.enabled) return;
+        this.init();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+        osc.frequency.setValueAtTime(600, this.ctx.currentTime + 0.08);
+        osc.frequency.setValueAtTime(900, this.ctx.currentTime + 0.16);
+        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.25);
+      }
+    }
+
+    const sfx = new SoundFX();
+
+    /* ==========================================================================
+       MAP & GAME CONSTANTS
+       ========================================================================== */
+    const GRID_WIDTH = 19;
+    const GRID_HEIGHT = 21;
+    const INITIAL_MAP = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,3,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,3,1],
+      [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+      [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+      [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+      [1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1],
+      [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+      [1,1,1,1,2,1,1,1,0,1,0,1,1,1,2,1,1,1,1],
+      [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+      [1,1,1,1,2,1,0,1,1,0,1,1,0,1,2,1,1,1,1],
+      [0,0,0,0,2,0,0,1,0,0,0,1,0,0,2,0,0,0,0],
+      [1,1,1,1,2,1,0,1,1,1,1,1,0,1,2,1,1,1,1],
+      [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+      [1,1,1,1,2,1,0,1,1,1,1,1,0,1,2,1,1,1,1],
+      [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
+      [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+      [1,3,2,1,2,2,2,2,2,0,2,2,2,2,2,1,2,3,1],
+      [1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1],
+      [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+      [1,2,1,1,1,1,1,1,2,1,2,1,1,1,1,1,1,2,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    const DIR_UP = { x: 0, y: -1, angle: -Math.PI / 2 };
+    const DIR_DOWN = { x: 0, y: 1, angle: Math.PI / 2 };
+    const DIR_LEFT = { x: -1, y: 0, angle: Math.PI };
+    const DIR_RIGHT = { x: 1, y: 0, angle: 0 };
+
+    /* ==========================================================================
+       GAME STATE
+       ========================================================================== */
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const threeContainer = document.getElementById('threejs-container');
+
+    let map = [];
+    let tileSize = 24;
+    let score = 0;
+    let lives = 3;
+    let gameOver = true;
+    let is3DMode = true;
+    let currentDifficulty = 'hard';
+
+    // Player Cooldowns & Abilities
+    let dashCooldown = 0;
+    let pulseCooldown = 0;
+    let pulseActiveTimer = 0;
+    let powerPelletTimer = 0;
+
+    // Lasers and Slime Hazards
+    let laserTraps = [];
+    let slimeTrails = [];
+    let particles = [];
+
+    /* ==========================================================================
+       THREE.JS 3D ENGINE SETUP
+       ========================================================================== */
+    let scene3D, camera3D, renderer3D;
+    let wallMeshes3D = [];
+    let dotMeshes3D = {};
+    let ghostMeshes3D = [];
+    let pacmanMesh3D;
+    let flashSpotLight3D, ambientLight3D;
+
+    let isMouseDown = false;
+    let mouseX = 0, mouseY = 0;
+    let camRotX = 0.85;
+    let camRotY = 0;
+
+    function initThreeJS() {
+      if (renderer3D) return;
+
+      scene3D = new THREE.Scene();
+      scene3D.background = new THREE.Color(0x050508);
+      scene3D.fog = new THREE.FogExp2(0x050508, 0.025);
+
+      camera3D = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+
+      renderer3D = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer3D.setPixelRatio(window.devicePixelRatio);
+      renderer3D.shadowMap.enabled = true;
+      threeContainer.appendChild(renderer3D.domElement);
+
+      ambientLight3D = new THREE.AmbientLight(0x222233, 0.8);
+      scene3D.add(ambientLight3D);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
+      dirLight.position.set(10, 30, 20);
+      scene3D.add(dirLight);
+
+      flashSpotLight3D = new THREE.SpotLight(0xfacc15, 3, 20, Math.PI / 3, 0.5, 1);
+      scene3D.add(flashSpotLight3D);
+      scene3D.add(flashSpotLight3D.target);
+
+      threeContainer.addEventListener('mousedown', (e) => {
+        isMouseDown = true;
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+      });
+
+      window.addEventListener('mouseup', () => isMouseDown = false);
+      window.addEventListener('mousemove', (e) => {
+        if (!isMouseDown) return;
+        const deltaX = e.clientX - mouseX;
+        const deltaY = e.clientY - mouseY;
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+
+        camRotY -= deltaX * 0.008;
+        camRotX = Math.max(0.2, Math.min(Math.PI / 2 - 0.05, camRotX + deltaY * 0.008));
+      });
+    }
+
+    function build3DMap() {
+      if (!scene3D) return;
+
+      wallMeshes3D.forEach(m => scene3D.remove(m));
+      wallMeshes3D = [];
+      Object.values(dotMeshes3D).forEach(m => scene3D.remove(m));
+      dotMeshes3D = {};
+
+      const wallGeo = new THREE.BoxGeometry(1, 1, 1);
+      const wallMat = new THREE.MeshStandardMaterial({ 
+        color: 0x1e1b4b, 
+        roughness: 0.3, 
+        metalness: 0.8,
+        emissive: 0x111827
+      });
+
+      const dotGeo = new THREE.SphereGeometry(0.12, 8, 8);
+      const dotMat = new THREE.MeshBasicMaterial({ color: 0xfde047 });
+
+      const powerGeo = new THREE.SphereGeometry(0.28, 12, 12);
+      const powerMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7 });
+
+      for (let r = 0; r < GRID_HEIGHT; r++) {
+        for (let c = 0; c < GRID_WIDTH; c++) {
+          const tile = map[r][c];
+          const x = c - GRID_WIDTH / 2;
+          const z = r - GRID_HEIGHT / 2;
+
+          if (tile === 1) {
+            const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+            wallMesh.position.set(x, 0.5, z);
+
+            const edgesGeo = new THREE.EdgesGeometry(wallGeo);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x4338ca });
+            const line = new THREE.LineSegments(edgesGeo, lineMat);
+            wallMesh.add(line);
+
+            scene3D.add(wallMesh);
+            wallMeshes3D.push(wallMesh);
+          } else if (tile === 2) {
+            const dotMesh = new THREE.Mesh(dotGeo, dotMat);
+            dotMesh.position.set(x, 0.2, z);
+            scene3D.add(dotMesh);
+            dotMeshes3D[`${c}_${r}`] = dotMesh;
+          } else if (tile === 3) {
+            const powerMesh = new THREE.Mesh(powerGeo, powerMat);
+            powerMesh.position.set(x, 0.3, z);
+            scene3D.add(powerMesh);
+            dotMeshes3D[`${c}_${r}`] = powerMesh;
+          }
+        }
+      }
+
+      if (!pacmanMesh3D) {
+        const pacGeo = new THREE.SphereGeometry(0.42, 16, 16);
+        const pacMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.2, emissive: 0x854d0e });
+        pacmanMesh3D = new THREE.Mesh(pacGeo, pacMat);
+        scene3D.add(pacmanMesh3D);
+      }
+
+      if (ghostMeshes3D.length === 0) {
+        ghosts.forEach(ghost => {
+          const ghostGroup = new THREE.Group();
+
+          const headGeo = new THREE.SphereGeometry(0.38, 12, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+          const bodyGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.4, 12);
+          const mat = new THREE.MeshStandardMaterial({ color: ghost.color, roughness: 0.3 });
+
+          const head = new THREE.Mesh(headGeo, mat);
+          head.position.y = 0.2;
+          const body = new THREE.Mesh(bodyGeo, mat);
+          body.position.y = 0;
+
+          ghostGroup.add(head);
+          ghostGroup.add(body);
+
+          const eyeGeo = new THREE.SphereGeometry(0.09, 8, 8);
+          const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+          const pupilMat = new THREE.MeshBasicMaterial({ color: 0x1e1b4b });
+
+          const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+          leftEye.position.set(-0.15, 0.2, 0.3);
+          const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+          rightEye.position.set(0.15, 0.2, 0.3);
+
+          const pupilGeo = new THREE.SphereGeometry(0.04, 6, 6);
+          const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
+          leftPupil.position.set(-0.15, 0.2, 0.37);
+          const rightPupil = new THREE.Mesh(pupilGeo, pupilMat);
+          rightPupil.position.set(0.15, 0.2, 0.37);
+
+          ghostGroup.add(leftEye);
+          ghostGroup.add(rightEye);
+          ghostGroup.add(leftPupil);
+          ghostGroup.add(rightPupil);
+
+          scene3D.add(ghostGroup);
+          ghostMeshes3D.push({ group: ghostGroup, ghostRef: ghost, mat: mat });
+        });
+      }
+    }
+
+    function update3DRender() {
+      if (!is3DMode || !scene3D) return;
+
+      const pacX = pacman.x - GRID_WIDTH / 2;
+      const pacZ = pacman.y - GRID_HEIGHT / 2;
+      pacmanMesh3D.position.set(pacX, 0.4, pacZ);
+      pacmanMesh3D.rotation.y = pacman.dir.angle;
+
+      if (pacman.isDashing) {
+        pacmanMesh3D.material.color.setHex(0x22d3ee);
+      } else {
+        pacmanMesh3D.material.color.setHex(0xfacc15);
+      }
+
+      flashSpotLight3D.position.set(pacX, 2.5, pacZ);
+      flashSpotLight3D.target.position.set(pacX + pacman.dir.x * 4, 0, pacZ + pacman.dir.y * 4);
+      flashSpotLight3D.intensity = pulseActiveTimer > 0 ? 8 : 4;
+
+      for (let r = 0; r < GRID_HEIGHT; r++) {
+        for (let c = 0; c < GRID_WIDTH; c++) {
+          const key = `${c}_${r}`;
+          if (map[r][c] === 0 && dotMeshes3D[key]) {
+            scene3D.remove(dotMeshes3D[key]);
+            delete dotMeshes3D[key];
+          }
+        }
+      }
+
+      ghostMeshes3D.forEach(gObj => {
+        const gx = gObj.ghostRef.x - GRID_WIDTH / 2;
+        const gz = gObj.ghostRef.y - GRID_HEIGHT / 2;
+        gObj.group.position.set(gx, 0.4 + Math.sin(Date.now() * 0.005) * 0.05, gz);
+
+        if (powerPelletTimer > 0) {
+          gObj.mat.color.setHex(powerPelletTimer < 1500 && Math.floor(Date.now() / 150) % 2 === 0 ? 0xffffff : 0x3b82f6);
+        } else {
+          gObj.mat.color.set(gObj.ghostRef.color);
+        }
+      });
+
+      const camDist = 12;
+      camera3D.position.x = pacX + Math.sin(camRotY) * Math.cos(camRotX) * camDist;
+      camera3D.position.y = Math.sin(camRotX) * camDist;
+      camera3D.position.z = pacZ + Math.cos(camRotY) * Math.cos(camRotX) * camDist;
+      camera3D.lookAt(pacX, 0.2, pacZ);
+
+      renderer3D.render(scene3D, camera3D);
+    }
+
+    function toggleViewMode() {
+      is3DMode = !is3DMode;
+      const toggleBtn = document.getElementById('toggle-3d-btn');
+
+      if (is3DMode) {
+        toggleBtn.innerText = "3D MODE: ON";
+        toggleBtn.className = "btn-hover px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg border border-indigo-400 text-xs font-arcade font-bold shadow-md";
+        threeContainer.classList.remove('hidden');
+        canvas.classList.add('hidden');
+        initThreeJS();
+        build3DMap();
+      } else {
+        toggleBtn.innerText = "2D MODE: ON";
+        toggleBtn.className = "btn-hover px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-yellow-400 rounded-lg border border-zinc-700 text-xs font-arcade font-bold shadow-md";
+        threeContainer.classList.add('hidden');
+        canvas.classList.remove('hidden');
+      }
+      resizeCanvas();
+    }
+
+    /* ==========================================================================
+       PAC-MAN CLASS
+       ========================================================================== */
+    class PacMan {
+      constructor() {
+        this.reset();
+      }
+
+      reset() {
+        this.gridX = 9;
+        this.gridY = 16;
+        this.x = 9;
+        this.y = 16;
+        this.dir = DIR_RIGHT;
+        this.nextDir = DIR_RIGHT;
+        this.currentSpeed = GAME_CONFIG.pacMan.baseSpeed;
+        this.mouthAngle = 0.2;
+        this.mouthSpeed = 0.03;
+        this.isDashing = false;
+        this.dashTimer = 0;
+      }
+
+      update(dt) {
+        if (this.currentSpeed < GAME_CONFIG.pacMan.maxSpeed) {
+          this.currentSpeed = Math.min(GAME_CONFIG.pacMan.maxSpeed, this.currentSpeed + GAME_CONFIG.pacMan.acceleration);
+        }
+
+        let speed = this.currentSpeed * adminPacSpeedMult;
+        if (this.isDashing) {
+          speed *= GAME_CONFIG.pacMan.dashMultiplier;
+          this.dashTimer -= dt;
+          if (this.dashTimer <= 0) {
+            this.isDashing = false;
+          }
+        }
+
+        if (this.nextDir.x === -this.dir.x && this.nextDir.y === -this.dir.y) {
+          this.dir = this.nextDir;
+        }
+
+        const rx = Math.round(this.x);
+        const ry = Math.round(this.y);
+
+        if (Math.abs(this.x - rx) < 0.25 && Math.abs(this.y - ry) < 0.25) {
+          if (rx <= 0 && this.nextDir === DIR_LEFT) {
+            this.x = GRID_WIDTH - 1;
+            this.dir = this.nextDir;
+          } else if (rx >= GRID_WIDTH - 1 && this.nextDir === DIR_RIGHT) {
+            this.x = 0;
+            this.dir = this.nextDir;
+          } else if (isTileWalkable(rx + this.nextDir.x, ry + this.nextDir.y)) {
+            if (this.dir !== this.nextDir) {
+              this.currentSpeed = Math.min(
+                GAME_CONFIG.pacMan.maxSpeed, 
+                this.currentSpeed + GAME_CONFIG.pacMan.turnSpeedBoost
+              );
+            }
+
+            if (this.nextDir.x !== 0) this.y = ry;
+            if (this.nextDir.y !== 0) this.x = rx;
+            this.dir = this.nextDir;
+          }
+        }
+
+        let nextX = this.x + this.dir.x * speed;
+        let nextY = this.y + this.dir.y * speed;
+
+        const curRx = Math.round(this.x);
+        const curRy = Math.round(this.y);
+
+        if (this.dir.x > 0 && !isTileWalkable(curRx + 1, curRy)) {
+          nextX = Math.min(nextX, curRx);
+          this.currentSpeed = GAME_CONFIG.pacMan.baseSpeed;
+        } else if (this.dir.x < 0 && !isTileWalkable(curRx - 1, curRy)) {
+          nextX = Math.max(nextX, curRx);
+          this.currentSpeed = GAME_CONFIG.pacMan.baseSpeed;
+        }
+
+        if (this.dir.y > 0 && !isTileWalkable(curRx, curRy + 1)) {
+          nextY = Math.min(nextY, curRy);
+          this.currentSpeed = GAME_CONFIG.pacMan.baseSpeed;
+        } else if (this.dir.y < 0 && !isTileWalkable(curRx, curRy - 1)) {
+          nextY = Math.max(nextY, curRy);
+          this.currentSpeed = GAME_CONFIG.pacMan.baseSpeed;
+        }
+
+        this.x = nextX;
+        this.y = nextY;
+        this.gridX = Math.round(this.x);
+        this.gridY = Math.round(this.y);
+
+        this.mouthAngle += this.mouthSpeed;
+        if (this.mouthAngle > 0.45 || this.mouthAngle < 0.05) {
+          this.mouthSpeed = -this.mouthSpeed;
+        }
+
+        this.checkPellet();
+      }
+
+      checkPellet() {
+        const gx = Math.round(this.x);
+        const gy = Math.round(this.y);
+
+        if (map[gy] && map[gy][gx] === 2) {
+          map[gy][gx] = 0;
+          score += 10;
+          updateScoreDisplay();
+          sfx.playWaka();
+          spawnParticles(gx * tileSize + tileSize/2, gy * tileSize + tileSize/2, '#fde047', 4);
+          checkWinCondition();
+        } else if (map[gy] && map[gy][gx] === 3) {
+          map[gy][gx] = 0;
+          score += 50;
+          updateScoreDisplay();
+          powerPelletTimer = GAME_CONFIG.difficulties[currentDifficulty].powerDuration;
+          sfx.playPower();
+          spawnParticles(gx * tileSize + tileSize/2, gy * tileSize + tileSize/2, '#38bdf8', 12);
+          checkWinCondition();
+        }
+      }
+
+      draw() {
+        const px = this.x * tileSize + tileSize / 2;
+        const py = this.y * tileSize + tileSize / 2;
+        const radius = tileSize * 0.45;
+
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(this.dir.angle);
+
+        if (this.isDashing) {
+          ctx.shadowColor = '#06b6d4';
+          ctx.shadowBlur = 15;
+        } else {
+          ctx.shadowColor = '#facc15';
+          ctx.shadowBlur = 8;
+        }
+
+        ctx.fillStyle = this.isDashing ? '#22d3ee' : '#facc15';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, this.mouthAngle * Math.PI, (2 - this.mouthAngle) * Math.PI);
+        ctx.lineTo(0, 0);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    /* ==========================================================================
+       GHOST CLASS
+       ========================================================================== */
+    class Ghost {
+      constructor(color, initialX, initialY, personality) {
+        this.color = color;
+        this.startX = initialX;
+        this.startY = initialY;
+        this.personality = personality;
+        this.reset();
+      }
+
+      reset() {
+        this.x = this.startX;
+        this.y = this.startY;
+        this.gridX = this.startX;
+        this.gridY = this.startY;
+        this.lastTileX = -1;
+        this.lastTileY = -1;
+        this.dir = DIR_UP;
+      }
+
+      update(dt) {
+        if (adminGhostsFrozen) return; // Frozen by admin cheat
+
+        let speed = GAME_CONFIG.difficulties[currentDifficulty].ghostSpeed;
+
+        if (powerPelletTimer > 0) {
+          speed *= 0.55;
+        }
+
+        const rx = Math.round(this.x);
+        const ry = Math.round(this.y);
+
+        if ((rx !== this.lastTileX || ry !== this.lastTileY) && Math.abs(this.x - rx) < 0.2 && Math.abs(this.y - ry) < 0.2) {
+          this.x = rx;
+          this.y = ry;
+          this.gridX = rx;
+          this.gridY = ry;
+          this.lastTileX = rx;
+          this.lastTileY = ry;
+
+          this.chooseTargetAndMove();
+        }
+
+        this.x += this.dir.x * speed;
+        this.y += this.dir.y * speed;
+
+        if (this.personality === 'inky' && Math.random() < 0.03 && powerPelletTimer <= 0) {
+          const gx = Math.round(this.x);
+          const gy = Math.round(this.y);
+          if (map[gy] && map[gy][gx] === 0) {
+            slimeTrails.push({ x: gx, y: gy, life: GAME_CONFIG.difficulties[currentDifficulty].slimeDuration });
+          }
+        }
+      }
+
+      chooseTargetAndMove() {
+        let targetX = pacman.gridX;
+        let targetY = pacman.gridY;
+
+        if (powerPelletTimer > 0) {
+          targetX = this.personality === 'blinky' ? 1 : 17;
+          targetY = this.personality === 'pinky' ? 1 : 19;
+        } else {
+          switch (this.personality) {
+            case 'blinky':
+              targetX = pacman.gridX;
+              targetY = pacman.gridY;
+              break;
+            case 'pinky':
+              targetX = pacman.gridX + pacman.dir.x * 3;
+              targetY = pacman.gridY + pacman.dir.y * 3;
+              break;
+            case 'inky':
+              targetX = pacman.gridX - pacman.dir.x * 2;
+              targetY = pacman.gridY - pacman.dir.y * 2;
+              break;
+            case 'clyde':
+              const dist = Math.hypot(this.gridX - pacman.gridX, this.gridY - pacman.gridY);
+              if (dist > 6) {
+                targetX = pacman.gridX;
+                targetY = pacman.gridY;
+              } else {
+                targetX = 1;
+                targetY = 19;
+              }
+              break;
+          }
+        }
+
+        let possibleDirs = [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT].filter(d => {
+          if (d.x === -this.dir.x && d.y === -this.dir.y) return false;
+          return isTileWalkable(this.gridX + d.x, this.gridY + d.y);
+        });
+
+        if (possibleDirs.length === 0) {
+          possibleDirs = [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT].filter(d => {
+            return isTileWalkable(this.gridX + d.x, this.gridY + d.y);
+          });
+        }
+
+        if (possibleDirs.length === 0) return;
+
+        let bestDir = possibleDirs[0];
+        let minDistance = Infinity;
+
+        for (const dir of possibleDirs) {
+          const nextGx = this.gridX + dir.x;
+          const nextGy = this.gridY + dir.y;
+          const dist = Math.hypot(nextGx - targetX, nextGy - targetY);
+          if (dist < minDistance) {
+            minDistance = dist;
+            bestDir = dir;
+          }
+        }
+
+        this.dir = bestDir;
+      }
+
+      draw() {
+        const px = this.x * tileSize + tileSize / 2;
+        const py = this.y * tileSize + tileSize / 2;
+        const radius = tileSize * 0.42;
+
+        ctx.save();
+        ctx.translate(px, py);
+
+        if (powerPelletTimer > 0) {
+          ctx.fillStyle = powerPelletTimer < 1500 && Math.floor(Date.now() / 150) % 2 === 0 ? '#ffffff' : '#3b82f6';
+          ctx.shadowColor = '#3b82f6';
+        } else {
+          ctx.fillStyle = this.color;
+          ctx.shadowColor = this.color;
+        }
+        ctx.shadowBlur = 10;
+
+        ctx.beginPath();
+        ctx.arc(0, -radius * 0.2, radius, Math.PI, 0, false);
+        ctx.lineTo(radius, radius * 0.8);
+        ctx.lineTo(radius * 0.4, radius * 0.5);
+        ctx.lineTo(0, radius * 0.8);
+        ctx.lineTo(-radius * 0.4, radius * 0.5);
+        ctx.lineTo(-radius, radius * 0.8);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-radius * 0.35, -radius * 0.2, radius * 0.25, 0, Math.PI * 2);
+        ctx.arc(radius * 0.35, -radius * 0.2, radius * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = powerPelletTimer > 0 ? '#ef4444' : '#1e1b4b';
+        ctx.beginPath();
+        const eyeOffsetX = this.dir.x * 2;
+        const eyeOffsetY = this.dir.y * 2;
+        ctx.arc(-radius * 0.35 + eyeOffsetX, -radius * 0.2 + eyeOffsetY, radius * 0.12, 0, Math.PI * 2);
+        ctx.arc(radius * 0.35 + eyeOffsetX, -radius * 0.2 + eyeOffsetY, radius * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    /* ==========================================================================
+       MAP & HELPER FUNCTIONS
+       ========================================================================== */
+    function isTileWalkable(gx, gy) {
+      if (gy < 0 || gy >= GRID_HEIGHT || gx < 0 || gx >= GRID_WIDTH) return false;
+      if (map[gy][gx] === 1) return false;
+      for (const laser of laserTraps) {
+        if (laser.active && laser.x === gx && laser.y === gy) return false;
+      }
+      return true;
+    }
+
+    function initMap() {
+      map = JSON.parse(JSON.stringify(INITIAL_MAP));
+    }
+
+    const pacman = new PacMan();
+    const ghosts = [
+      new Ghost('#ef4444', 9, 8, 'blinky'),
+      new Ghost('#ec4899', 9, 9, 'pinky'),
+      new Ghost('#06b6d4', 8, 10, 'inky'),
+      new Ghost('#f97316', 10, 10, 'clyde')
+    ];
+
+    /* ==========================================================================
+       PARTICLE SYSTEM & HAZARDS
+       ========================================================================== */
+    function spawnParticles(x, y, color, count = 8) {
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 4,
+          vy: (Math.random() - 0.5) * 4,
+          color: color,
+          life: 1.0,
+          decay: Math.random() * 0.05 + 0.02
+        });
+      }
+    }
+
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+
+    function drawParticles() {
+      particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 3, 3);
+        ctx.restore();
+      });
+    }
+
+    let laserTimer = 0;
+    function updateHazards(dt) {
+      laserTimer += dt;
+      const interval = GAME_CONFIG.difficulties[currentDifficulty].laserInterval;
+      if (laserTimer >= interval) {
+        laserTimer = 0;
+        triggerRandomLaserTrap();
+      }
+
+      for (let i = slimeTrails.length - 1; i >= 0; i--) {
+        slimeTrails[i].life -= dt;
+        if (slimeTrails[i].life <= 0) slimeTrails.splice(i, 1);
+      }
+
+      const pacGx = Math.round(pacman.x);
+      const pacGy = Math.round(pacman.y);
+      for (const slime of slimeTrails) {
+        if (slime.x === pacGx && slime.y === pacGy && !pacman.isDashing) {
+          pacman.x = Math.round(pacman.x);
+          pacman.y = Math.round(pacman.y);
+        }
+      }
+    }
+
+    function triggerRandomLaserTrap() {
+      let emptyTiles = [];
+      for (let r = 1; r < GRID_HEIGHT - 1; r++) {
+        for (let c = 1; c < GRID_WIDTH - 1; c++) {
+          if (map[r][c] === 0 || map[r][c] === 2) {
+            emptyTiles.push({ x: c, y: r });
+          }
+        }
+      }
+
+      if (emptyTiles.length > 0) {
+        const tile = emptyTiles[Math.floor(Math.random() * emptyTiles.length)];
+        laserTraps.push({ x: tile.x, y: tile.y, active: true });
+        sfx.playPulse();
+
+        setTimeout(() => {
+          laserTraps = laserTraps.filter(l => !(l.x === tile.x && l.y === tile.y));
+        }, 3500);
+      }
+    }
+
+    /* ==========================================================================
+       DYNAMIC LIGHTING & FOG OF WAR ENGINE (2D)
+       ========================================================================== */
+    function drawLightingFog() {
+      if (pulseActiveTimer > 0) return;
+
+      const px = pacman.x * tileSize + tileSize / 2;
+      const py = pacman.y * tileSize + tileSize / 2;
+      const radius = GAME_CONFIG.difficulties[currentDifficulty].fogRadius;
+
+      ctx.save();
+      
+      const gradient = ctx.createRadialGradient(px, py, 15, px, py, radius);
+      gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0.7)');
+      gradient.addColorStop(1, 'rgba(3, 3, 5, 0.98)');
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.restore();
+    }
+
+    /* ==========================================================================
+       RENDERING ENGINE (2D)
+       ========================================================================== */
+    function renderMap() {
+      ctx.fillStyle = '#050508';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let r = 0; r < GRID_HEIGHT; r++) {
+        for (let c = 0; c < GRID_WIDTH; c++) {
+          const tile = map[r][c];
+          const x = c * tileSize;
+          const y = r * tileSize;
+
+          if (tile === 1) {
+            ctx.fillStyle = '#1e1b4b';
+            ctx.strokeStyle = '#4338ca';
+            ctx.lineWidth = 2;
+            ctx.fillRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
+            ctx.strokeRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
+          } else if (tile === 2) {
+            ctx.fillStyle = '#fde047';
+            ctx.beginPath();
+            ctx.arc(x + tileSize / 2, y + tileSize / 2, Math.max(2, tileSize * 0.12), 0, Math.PI * 2);
+            ctx.fill();
+          } else if (tile === 3) {
+            ctx.fillStyle = '#38bdf8';
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(x + tileSize / 2, y + tileSize / 2, Math.max(5, tileSize * 0.28), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        }
+      }
+
+      slimeTrails.forEach(slime => {
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.5)';
+        ctx.fillRect(slime.x * tileSize + 2, slime.y * tileSize + 2, tileSize - 4, tileSize - 4);
+      });
+
+      laserTraps.forEach(laser => {
+        ctx.fillStyle = '#ef4444';
+        ctx.shadowColor = '#ef4444';
+        ctx.shadowBlur = 12;
+        ctx.fillRect(laser.x * tileSize + 4, laser.y * tileSize + 4, tileSize - 8, tileSize - 8);
+        ctx.shadowBlur = 0;
+      });
+    }
+
+    /* ==========================================================================
+       COLLISION & GAME LOGIC
+       ========================================================================== */
+    function checkCollisions() {
+      if (adminGodMode) return; // God Mode Invulnerability
+
+      const pacGx = Math.round(pacman.x);
+      const pacGy = Math.round(pacman.y);
+
+      for (const laser of laserTraps) {
+        if (laser.active && laser.x === pacGx && laser.y === pacGy) {
+          handleDeath();
+          return;
+        }
+      }
+
+      ghosts.forEach(ghost => {
+        const dist = Math.hypot(pacman.x - ghost.x, pacman.y - ghost.y);
+        if (dist < 0.7) {
+          if (powerPelletTimer > 0) {
+            score += 200;
+            updateScoreDisplay();
+            sfx.playEatGhost();
+            spawnParticles(ghost.x * tileSize + tileSize/2, ghost.y * tileSize + tileSize/2, ghost.color, 15);
+            ghost.reset();
+          } else {
+            handleDeath();
+          }
+        }
+      });
+    }
+
+    function handleDeath() {
+      lives--;
+      sfx.playDeath();
+      updateLivesDisplay();
+      spawnParticles(pacman.x * tileSize + tileSize/2, pacman.y * tileSize + tileSize/2, '#facc15', 25);
+
+      if (lives <= 0) {
+        endGame(false);
+      } else {
+        pacman.reset();
+        ghosts.forEach(g => g.reset());
+      }
+    }
+
+    function checkWinCondition() {
+      let remainingDots = 0;
+      for (let r = 0; r < GRID_HEIGHT; r++) {
+        for (let c = 0; c < GRID_WIDTH; c++) {
+          if (map[r][c] === 2 || map[r][c] === 3) remainingDots++;
+        }
+      }
+
+      if (remainingDots === 0) {
+        endGame(true);
+      }
+    }
+
+    /* ==========================================================================
+       MAIN GAME LOOP
+       ========================================================================== */
+    let lastTime = 0;
+    function gameLoop(timestamp) {
+      if (gameOver) return;
+
+      const dt = timestamp - lastTime || 16;
+      lastTime = timestamp;
+
+      if (dashCooldown > 0) dashCooldown = Math.max(0, dashCooldown - dt);
+      if (pulseCooldown > 0) pulseCooldown = Math.max(0, pulseCooldown - dt);
+      if (pulseActiveTimer > 0) pulseActiveTimer = Math.max(0, pulseActiveTimer - dt);
+      if (powerPelletTimer > 0) powerPelletTimer = Math.max(0, powerPelletTimer - dt);
+
+      updateAbilityHUD();
+
+      pacman.update(dt);
+      ghosts.forEach(ghost => ghost.update(dt));
+      updateHazards(dt);
+      updateParticles();
+      checkCollisions();
+
+      if (is3DMode) {
+        update3DRender();
+      } else {
+        renderMap();
+        ghosts.forEach(ghost => ghost.draw());
+        pacman.draw();
+        drawParticles();
+        drawLightingFog();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    /* ==========================================================================
+       ABILITIES & HUD
+       ========================================================================== */
+    function triggerDash() {
+      if (dashCooldown <= 0 && !pacman.isDashing && !gameOver) {
+        pacman.isDashing = true;
+        pacman.dashTimer = 300;
+        dashCooldown = 2500;
+        sfx.playDash();
+        spawnParticles(pacman.x * tileSize + tileSize/2, pacman.y * tileSize + tileSize/2, '#22d3ee', 10);
+      }
+    }
+
+    function triggerPulse() {
+      if (pulseCooldown <= 0 && !gameOver) {
+        pulseActiveTimer = 1800;
+        pulseCooldown = 6000;
+        sfx.playPulse();
+      }
+    }
+
+    function updateAbilityHUD() {
+      const dashBar = document.getElementById('dash-bar');
+      const pulseBar = document.getElementById('pulse-bar');
+
+      const dashPct = Math.max(0, 100 - (dashCooldown / 2500) * 100);
+      const pulsePct = Math.max(0, 100 - (pulseCooldown / 6000) * 100);
+
+      if (dashBar) dashBar.style.width = `${dashPct}%`;
+      if (pulseBar) pulseBar.style.width = `${pulsePct}%`;
+    }
+
+    function updateScoreDisplay() {
+      document.getElementById('score-display').innerText = score.toString().padStart(5, '0');
+    }
+
+    function updateLivesDisplay() {
+      document.getElementById('lives-display').innerText = adminGodMode ? '∞' : '♥'.repeat(Math.max(0, lives));
+    }
+
+    /* ==========================================================================
+       USER INPUT HANDLERS
+       ========================================================================== */
+    window.addEventListener('keydown', (e) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'w', 'W', 'a', 'A', 's', 'S', 'd', 'D'].includes(e.key)) {
+        e.preventDefault();
+      }
+
+      let inputDirName = '';
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          pacman.nextDir = DIR_UP;
+          inputDirName = 'UP';
+          break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          pacman.nextDir = DIR_DOWN;
+          inputDirName = 'DOWN';
+          break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          pacman.nextDir = DIR_LEFT;
+          inputDirName = 'LEFT';
+          break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          pacman.nextDir = DIR_RIGHT;
+          inputDirName = 'RIGHT';
+          break;
+        case ' ':
+          triggerDash();
+          break;
+        case 'Shift':
+          triggerPulse();
+          break;
+      }
+
+      if (inputDirName) {
+        checkCheatSequence(inputDirName);
+      }
+    });
+
+    function handleTouchDir(dirStr) {
+      if (dirStr === 'UP') pacman.nextDir = DIR_UP;
+      if (dirStr === 'DOWN') pacman.nextDir = DIR_DOWN;
+      if (dirStr === 'LEFT') pacman.nextDir = DIR_LEFT;
+      if (dirStr === 'RIGHT') pacman.nextDir = DIR_RIGHT;
+
+      checkCheatSequence(dirStr);
+    }
+
+    /* ==========================================================================
+       RESIZING & CANVAS ADAPTATION
+       ========================================================================== */
+    function resizeCanvas() {
+      const container = document.getElementById('canvas-container');
+      const availableWidth = container.clientWidth;
+      const availableHeight = container.clientHeight;
+
+      const scale = Math.min(
+        availableWidth / (GRID_WIDTH * 24),
+        availableHeight / (GRID_HEIGHT * 24)
+      );
+
+      tileSize = Math.max(12, Math.floor(24 * scale));
+
+      canvas.width = GRID_WIDTH * tileSize;
+      canvas.height = GRID_HEIGHT * tileSize;
+
+      if (renderer3D) {
+        renderer3D.setSize(availableWidth, availableHeight);
+        camera3D.aspect = availableWidth / availableHeight;
+        camera3D.updateProjectionMatrix();
+      }
+
+      if (!gameOver && !is3DMode) renderMap();
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    /* ==========================================================================
+       GAME CONTROLLER & START/END MODAL
+       ========================================================================== */
+    function setDifficulty(diff) {
+      currentDifficulty = diff;
+      document.querySelectorAll('.diff-btn').forEach(btn => {
+        btn.classList.remove('border-yellow-500/50', 'text-yellow-400', 'bg-yellow-500/10');
+        btn.classList.add('border-zinc-700', 'text-zinc-400');
+      });
+
+      const activeBtn = document.getElementById(`btn-diff-${diff}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('border-zinc-700', 'text-zinc-400');
+        activeBtn.classList.add('border-yellow-500/50', 'text-yellow-400', 'bg-yellow-500/10');
+      }
+
+      document.getElementById('diff-badge').innerText = diff.toUpperCase();
+    }
+
+    function startGame() {
+      sfx.init();
+      initMap();
+      score = 0;
+      lives = 3;
+      gameOver = false;
+
+      pacman.reset();
+      ghosts.forEach(g => g.reset());
+      laserTraps = [];
+      slimeTrails = [];
+      particles = [];
+
+      updateScoreDisplay();
+      updateLivesDisplay();
+
+      document.getElementById('game-modal').classList.add('hidden');
+      document.getElementById('ability-hud').classList.remove('hidden');
+
+      if (is3DMode) {
+        initThreeJS();
+        build3DMap();
+      }
+
+      resizeCanvas();
+      lastTime = performance.now();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function endGame(won) {
+      gameOver = true;
+      document.getElementById('ability-hud').classList.add('hidden');
+
+      const modal = document.getElementById('game-modal');
+      const title = document.getElementById('modal-title');
+      const subtitle = document.getElementById('modal-subtitle');
+      const btn = document.getElementById('start-btn');
+
+      modal.classList.remove('hidden');
+
+      if (won) {
+        title.innerText = "SURVIVED!";
+        title.className = "text-2xl sm:text-3xl font-arcade text-green-400 tracking-wider glow-yellow";
+        subtitle.innerText = `Incredible reflexes! Final Score: ${score}`;
+        btn.innerText = "PLAY AGAIN";
+      } else {
+        title.innerText = "TERMINATED";
+        title.className = "text-2xl sm:text-3xl font-arcade text-red-500 tracking-wider glow-red";
+        subtitle.innerText = `You were consumed by the chaos. Final Score: ${score}`;
+        btn.innerText = "RETRY SURVIVAL";
+      }
+    }
+
+    window.onload = () => {
+      resizeCanvas();
+      initThreeJS();
+    };
+  </script>
+</body>
+</html>
